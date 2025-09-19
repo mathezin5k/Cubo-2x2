@@ -12,7 +12,6 @@
 #define ANSI_BG_GREEN   "\x1b[42m"
 #define ANSI_RESET      "\x1b[0m"
 
-
 void initCube(char cube[6][4]) {
     char colors[] = {'W','Y','R','O','B','G'};
     for(int f=0; f<6; f++){
@@ -20,7 +19,6 @@ void initCube(char cube[6][4]) {
             cube[f][i] = colors[f];
         }    
     }
-        
 }
 
 void rotateFaceClockwise(char face[4]) {
@@ -143,29 +141,28 @@ typedef struct Queue{
 } Queue;
 
 void initQueue(Queue* q){ 
-    q->front=NULL; 
-    q->rear=NULL; 
+    q->front=NULL; q->rear=NULL; 
 }
-int isEmpty(Queue* q){ 
+
+int isEmpty(Queue* q){
     return q->front==NULL; 
 }
+
 void enqueue(Queue* q, Node* n){
     n->next=NULL;
     if(q->rear==NULL){
         q->front=q->rear=n;
     }else { q->rear->next=n; q->rear=n; }
 }
+
 Node* dequeue(Queue* q){
-    if(isEmpty(q)){
-        return NULL;
-    }
+    if(isEmpty(q)) return NULL;
     Node* n=q->front;
     q->front=n->next;
-    if(q->front==NULL){
-        q->rear=NULL;
-    } 
+    if(q->front==NULL) q->rear=NULL;
     return n;
 }
+
 void copyCube(char dest[6][4], char src[6][4]){
     for(int f=0; f<6; f++){
         for(int i=0; i<4; i++){
@@ -177,26 +174,39 @@ int isCompletedCube(char c[6][4]){
     for(int f=0; f<6; f++){
         char col=c[f][0];
         for(int i=1;i<4;i++){
-            if(c[f][i]!=col){
-                return 0;
-            } 
+            if(c[f][i]!=col) return 0;
         } 
     }
     return 1;
 }
 
-void bfsSolver(char start[6][4], int maxDepth){
-    Queue q; initQueue(&q);
+void searchSolver(char start[6][4], int maxDepth, int isDFS){
+    Queue q; 
+    initQueue(&q);
     Node* root = (Node*)malloc(sizeof(Node));
     copyCube(root->cube,start);
-    root->parent=NULL; root->move=' '; root->depth=0; root->next=NULL;
+    root->parent=NULL; 
+    root->move=' '; 
+    root->depth=0; 
+    root->next=NULL;
     enqueue(&q, root);
 
     void (*funcs[3])(char[6][4]) = {moveF, moveU, moveR};
     char moves[3] = {'F','U','R'};
 
     while(!isEmpty(&q)){
-        Node* cur = dequeue(&q);
+        Node* cur;
+
+        if(isDFS){ // comportamento de pilha
+            Node* prev = NULL;
+            cur = q.front;
+            while(cur->next != NULL){ prev = cur; cur = cur->next; }
+            if(prev != NULL) prev->next = NULL;
+            else q.front = NULL;
+            if(cur == q.rear) q.rear = prev;
+        }else{ 
+            cur = dequeue(&q); // BFS
+        }
 
         if(isCompletedCube(cur->cube)){
             printf("Cubo inicial embaralhado:\n"); printCubeVisualColored(start);
@@ -249,7 +259,6 @@ void bfsSolver(char start[6][4], int maxDepth){
 
     printf("Nenhuma solucao encontrada até profundidade %d\n", maxDepth);
 }
-
 
 void playInteractive(char cube[6][4]){
     int playing=1,movs=0;
@@ -308,8 +317,8 @@ int main(){
             running=0; system("cls");
             switch(selected){
                 case 0: printf("Voce escolheu Jogar!\n"); playInteractive(cube); break;
-                case 1: printf("Voce escolheu Busca em Largura!\n"); bfsSolver(cube,15); break;
-                case 2: printf("Voce escolheu Busca em Profundidade!\n"); break;
+                case 1: printf("Voce escolheu Busca em Largura!\n"); searchSolver(cube,15,0); break;
+                case 2: printf("Voce escolheu Busca em Profundidade!\n"); searchSolver(cube,16,1); break;
                 case 3: printf("Voce escolheu A*!\n"); break;
             }
         }
