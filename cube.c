@@ -13,6 +13,42 @@
 #define ANSI_BG_GREEN   "\x1b[42m"
 #define ANSI_RESET      "\x1b[0m"
 
+#define HASH_SIZE 100003
+
+// ------------------ Estruturas ------------------
+typedef struct Node{
+    char cube[6][4];
+    struct Node* parent;
+    char move;
+    int depth;
+    struct Node* next;
+} Node;
+
+typedef struct Queue{
+    Node* front;
+    Node* rear;
+} Queue;
+
+typedef struct HNode {
+    char key[25];     // estado do cubo serializado
+    int depth;        // custo até o solved
+    struct HNode* next;
+} HNode;
+
+typedef struct AStarNode {
+    char cube[6][4];
+    struct AStarNode* parent;
+    char move;
+    int g,h,f;
+    struct AStarNode* next;
+} AStarNode;
+
+typedef struct {
+    AStarNode* head;
+} OpenList;
+
+HNode* hashTable[HASH_SIZE];
+
 void initCube(char cube[6][4]) {
     char colors[] = {'W','Y','R','O','B','G'};
     for(int f=0; f<6; f++){
@@ -125,19 +161,7 @@ void randCube(char cube[6][4]){
     }
 }
 
-typedef struct Node{
-    char cube[6][4];
-    struct Node* parent;
-    char move;
-    int depth;
-    struct Node* next;
-} Node;
-
-typedef struct Queue{
-    Node* front;
-    Node* rear;
-} Queue;
-
+// ------------------ Queue ------------------
 void initQueue(Queue* q){
     q->front=NULL; q->rear=NULL;
 }
@@ -192,7 +216,7 @@ void searchSolver(char start[6][4], int maxDepth, int isDFS){
     void (*funcs[3])(char[6][4]) = {moveF, moveU, moveR};
     char moves[3] = {'F','U','R'};
 
-    int statesVisited = 0; // CONTADOR ADICIONADO AQUI
+    int statesVisited = 0;
 
     while(!isEmpty(&q)){
         Node* cur;
@@ -205,15 +229,15 @@ void searchSolver(char start[6][4], int maxDepth, int isDFS){
             else q.front = NULL;
             if(cur == q.rear) q.rear = prev;
         }else{
-            cur = dequeue(&q); // BFS
+            cur = dequeue(&q);
         }
 
-        statesVisited++; // INCREMENTO ADICIONADO AQUI
+        statesVisited++;
 
         if(isCompletedCube(cur->cube)){
             printf("Cubo inicial embaralhado:\n"); printCubeVisualColored(start);
             printf("Quantidade de movimentos realizados: %d\n", cur->depth);
-            printf("Estados visitados: %d\n", statesVisited); // MENSAGEM ADICIONADA AQUI
+            printf("Estados visitados: %d\n", statesVisited);
 
             if(cur->depth>0){
                 Node* path[cur->depth];
@@ -261,7 +285,7 @@ void searchSolver(char start[6][4], int maxDepth, int isDFS){
     }
 
     printf("Nenhuma solução encontrada até profundidade %d\n", maxDepth);
-    printf("Estados visitados: %d\n", statesVisited); // MENSAGEM ADICIONADA AQUI
+    printf("Estados visitados: %d\n", statesVisited);
 }
 
 void playInteractive(char cube[6][4]){
@@ -289,10 +313,197 @@ void playInteractive(char cube[6][4]){
     }
 }
 
+// ------------------ Heurística ------------------
+
+void cubeToString(char cube[6][4], char* str){
+    int k=0;
+    for(int f=0;f<6;f++){
+        for(int i=0;i<4;i++) str[k++]=cube[f][i];
+    }
+    str[k]='\0';
+}
+void cubeFromString(char* str, char cube[6][4]){
+    int k=0;
+    for(int f=0;f<6;f++){
+        for(int i=0;i<4;i++) cube[f][i]=str[k++];
+    }
+}
+
+unsigned long hashKey(const char* str){
+    unsigned long h=5381; int c;
+    while((c=*str++)) h=((h<<5)+h)+c;
+    return h;
+}
+
+void insertHash(char* key,int depth){
+    unsigned long h=hashKey(key)%HASH_SIZE;
+    HNode* n=(HNode*)malloc(sizeof(HNode));
+    strcpy(n->key,key);
+    n->depth=depth;
+    n->next=hashTable[h];
+    hashTable[h]=n;
+}
+int findHash(char* key){
+    unsigned long h=hashKey(key)%HASH_SIZE;
+    HNode* cur=hashTable[h];
+    while(cur){
+        if(strcmp(cur->key,key)==0) return cur->depth;
+        cur=cur->next;
+    }
+    return -1;
+}
+int hashTableVazia(){
+    for(int i=0;i<HASH_SIZE;i++) if(hashTable[i]!=NULL) return 0;
+    return 1;
+}
+
+void saveHashToFile(const char* filename){
+    FILE* f=fopen(filename,"wb");
+    if(!f){ printf("Erro ao salvar hash!\n"); return; }
+    for(int i=0;i<HASH_SIZE;i++){
+        HNode* cur=hashTable[i];
+        while(cur){
+            fwrite(cur->key,sizeof(char),25,f);
+            fwrite(&cur->depth,sizeof(int),1,f);
+            cur=cur->next;
+        }
+    }
+    fclose(f);
+    printf("Hash salva em %s\n",filename);
+}
+void loadHashFromFile(const char* filename){
+    for(int i=0;i<HASH_SIZE;i++) hashTable[i]=NULL;
+    FILE* f=fopen(filename,"rb");
+    if(!f){ printf("Arquivo de heurística não encontrado.\n"); return; }
+    char key[25]; int depth;
+    while(fread(key,sizeof(char),25,f)==25){
+        if(fread(&depth,sizeof(int),1,f)!=1) break;
+        insertHash(key,depth);
+    }
+    fclose(f);
+    printf("Hash carregada de %s\n",filename);
+}
+
+void preprocess(){
+    for(int i=0;i<HASH_SIZE;i++){
+        HNode* cur = hashTable[i];
+        while(cur){
+            HNode* t = cur;
+            cur = cur->next;
+            free(t);
+        }
+        hashTable[i]=NULL;
+    }
+
+    Queue q; initQueue(&q);
+    Node* root=(Node*)malloc(sizeof(Node));
+    initCube(root->cube);
+    root->depth=0; root->parent=NULL; root->next=NULL;
+    enqueue(&q,root);
+
+    char key[25];
+    cubeToString(root->cube,key);
+    insertHash(key,0);
+
+    void (*funcs[3])(char[6][4])={moveF,moveU,moveR};
+
+    while(!isEmpty(&q)){
+        Node* cur=dequeue(&q);
+        cubeToString(cur->cube,key);
+        int curDepth=findHash(key);
+
+        for(int i=0;i<3;i++){
+            Node* child=(Node*)malloc(sizeof(Node));
+            copyCube(child->cube,cur->cube);
+            funcs[i](child->cube);
+            cubeToString(child->cube,key);
+
+            if(findHash(key)==-1){
+                insertHash(key,curDepth+1);
+                child->depth=curDepth+1;
+                child->parent=NULL;
+                child->next=NULL;
+                enqueue(&q,child);
+            }else free(child);
+        }
+        free(cur);
+    }
+    printf("Pré-processamento concluído!\n");
+}
+
+// ------------------ A* ------------------
+
+void pushOpen(OpenList* ol, AStarNode* n){
+    if(!ol->head||n->f<ol->head->f){ n->next=ol->head; ol->head=n; return; }
+    AStarNode* cur=ol->head;
+    while(cur->next && cur->next->f<=n->f) cur=cur->next;
+    n->next=cur->next; cur->next=n;
+}
+AStarNode* popOpen(OpenList* ol){
+    if(!ol->head) return NULL;
+    AStarNode* n=ol->head; ol->head=n->next; return n;
+}
+
+void solveAStar(char start[6][4]){
+    char key[25];
+    cubeToString(start,key);
+    int h=findHash(key);
+    if(h==-1){ printf("Estado inicial não encontrado na heurística!\n"); return; }
+
+    OpenList ol={NULL};
+    AStarNode* root=(AStarNode*)malloc(sizeof(AStarNode));
+    copyCube(root->cube,start);
+    root->parent=NULL; root->move=' ';
+    root->g=0; root->h=h; root->f=h;
+    root->next=NULL;
+    pushOpen(&ol,root);
+
+    void (*funcs[3])(char[6][4])={moveF,moveU,moveR};
+    char moves[3]={'F','U','R'};
+
+    int states=0;
+
+    while(ol.head){
+        AStarNode* cur=popOpen(&ol);
+        states++;
+        if(isCompletedCube(cur->cube)){
+            printf("Solução encontrada!\n");
+            printf("Movimentos: ");
+            char sol[100]; int len=0;
+            AStarNode* tmp=cur;
+            while(tmp->parent){ sol[len++]=tmp->move; tmp=tmp->parent; }
+            for(int i=len-1;i>=0;i--) printf("%c ",sol[i]);
+            printf("\nProfundidade: %d\nEstados expandidos: %d\n",cur->g,states);
+            printCubeVisualColored(cur->cube);
+            return;
+        }
+
+        for(int i=0;i<3;i++){
+            AStarNode* child=(AStarNode*)malloc(sizeof(AStarNode));
+            copyCube(child->cube,cur->cube);
+            funcs[i](child->cube);
+            cubeToString(child->cube,key);
+            int hh=findHash(key);
+            if(hh==-1){ free(child); continue; }
+            child->g=cur->g+1;
+            child->h=hh;
+            child->f=child->g+child->h;
+            child->parent=cur;
+            child->move=moves[i];
+            child->next=NULL;
+            pushOpen(&ol,child);
+        }
+    }
+    printf("Nenhuma solução encontrada!\n");
+}
+
+// ------------------ Menu ------------------
 
 int main(){
     setlocale(LC_ALL,"portuguese");
-    srand(time(NULL));
+    srand((unsigned int)time(NULL));
+    for(int i=0;i<HASH_SIZE;i++) hashTable[i]=NULL;
+
     char cube[6][4];
     initCube(cube);
 
@@ -326,11 +537,64 @@ int main(){
         else if(c==13){
             system("cls");
             switch(selected){
-                case 0: printf("Você escolheu Jogar!\n"); playInteractive(cube); system("pause"); break;
-                case 1: printf("Você escolheu Busca em Largura!\n"); searchSolver(cube,16,0); system("pause"); break;
-                case 2: printf("Você escolheu Busca em Profundidade!\n"); searchSolver(cube,16,1); system("pause"); break;
-                case 3: printf("Você escolheu A*!\n"); system("pause"); break;
-                case 4: printf("Você escolheu fechar o programa!\n"); running=0; break;
+                case 0:
+                    printf("Você escolheu Jogar!\n");
+                    playInteractive(cube);
+                    system("pause");
+                    break;
+                case 1:
+                    printf("Você escolheu Busca em Largura!\n");
+                    searchSolver(cube,16,0);
+                    system("pause");
+                    break;
+                case 2:
+                    printf("Você escolheu Busca em Profundidade!\n");
+                    searchSolver(cube,16,1);
+                    system("pause");
+                    break;
+                case 3: {
+                    int opAst=0, rodandoAst=1;
+                    while(rodandoAst){
+                        system("cls");
+                        printf("=== Modo A* ===\n\n");
+                        if(opAst==0) printf("-> Pré-processar heurística\n");
+                        else printf("   Pré-processar heurística\n");
+                        if(opAst==1) printf("-> Resolver com A*\n");
+                        else printf("   Resolver com A*\n");
+
+                        printf("\nUse as setas para navegar, Enter para selecionar, ESC para voltar.\n");
+
+                        int c=getch();
+                        if(c==0||c==224){
+                            c=getch();
+                            if(c==72){ opAst--; if(opAst<0) opAst=1; }
+                            else if(c==80){ opAst++; if(opAst>1) opAst=0; }
+                        }
+                        else if(c==13){
+                            system("cls");
+                            switch(opAst){
+                                case 0:
+                                    printf("Pré-processando...\n");
+                                    preprocess();
+                                    system("pause");
+                                    break;
+                                case 1:
+                                    printf("Resolvendo com A*...\n");
+                                    solveAStar(cube);
+                                    system("pause");
+                                    break;
+                            }
+                        }
+                        else if(c==27){ // ESC
+                            rodandoAst=0;
+                        }
+                    }
+                    break;
+                }
+                case 4:
+                    printf("Você escolheu fechar o programa!\n");
+                    running=0;
+                    break;
             }
         }
 
