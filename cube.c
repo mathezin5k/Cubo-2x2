@@ -3,6 +3,7 @@
 #include <conio.h>
 #include <time.h>
 #include <string.h>
+#include <locale.h>
 
 #define ANSI_BG_WHITE   "\x1b[47m"
 #define ANSI_BG_YELLOW  "\x1b[43m"
@@ -17,7 +18,7 @@ void initCube(char cube[6][4]) {
     for(int f=0; f<6; f++){
         for(int i=0; i<4; i++){
             cube[f][i] = colors[f];
-        }    
+        }
     }
 }
 
@@ -114,15 +115,12 @@ void printCubeVisualColored(char cube[6][4]) {
 }
 
 void randCube(char cube[6][4]){
-    for(int i=0; i<20; i++){
-        int move = rand()%6;
+    for(int i=0; i<40; i++){
+        int move = rand()%3;
         switch(move){
             case 0: moveF(cube); break;
             case 1: moveU(cube); break;
-            case 2: moveD(cube); break;
-            case 3: moveL(cube); break;
-            case 4: moveR(cube); break;
-            case 5: moveB(cube); break;
+            case 2: moveR(cube); break;
         }
     }
 }
@@ -140,12 +138,12 @@ typedef struct Queue{
     Node* rear;
 } Queue;
 
-void initQueue(Queue* q){ 
-    q->front=NULL; q->rear=NULL; 
+void initQueue(Queue* q){
+    q->front=NULL; q->rear=NULL;
 }
 
 int isEmpty(Queue* q){
-    return q->front==NULL; 
+    return q->front==NULL;
 }
 
 void enqueue(Queue* q, Node* n){
@@ -168,31 +166,33 @@ void copyCube(char dest[6][4], char src[6][4]){
         for(int i=0; i<4; i++){
             dest[f][i]=src[f][i];
         }
-    }    
+    }
 }
 int isCompletedCube(char c[6][4]){
     for(int f=0; f<6; f++){
         char col=c[f][0];
         for(int i=1;i<4;i++){
             if(c[f][i]!=col) return 0;
-        } 
+        }
     }
     return 1;
 }
 
 void searchSolver(char start[6][4], int maxDepth, int isDFS){
-    Queue q; 
+    Queue q;
     initQueue(&q);
     Node* root = (Node*)malloc(sizeof(Node));
     copyCube(root->cube,start);
-    root->parent=NULL; 
-    root->move=' '; 
-    root->depth=0; 
+    root->parent=NULL;
+    root->move=' ';
+    root->depth=0;
     root->next=NULL;
     enqueue(&q, root);
 
     void (*funcs[3])(char[6][4]) = {moveF, moveU, moveR};
     char moves[3] = {'F','U','R'};
+
+    int statesVisited = 0; // CONTADOR ADICIONADO AQUI
 
     while(!isEmpty(&q)){
         Node* cur;
@@ -204,19 +204,22 @@ void searchSolver(char start[6][4], int maxDepth, int isDFS){
             if(prev != NULL) prev->next = NULL;
             else q.front = NULL;
             if(cur == q.rear) q.rear = prev;
-        }else{ 
+        }else{
             cur = dequeue(&q); // BFS
         }
+
+        statesVisited++; // INCREMENTO ADICIONADO AQUI
 
         if(isCompletedCube(cur->cube)){
             printf("Cubo inicial embaralhado:\n"); printCubeVisualColored(start);
             printf("Quantidade de movimentos realizados: %d\n", cur->depth);
+            printf("Estados visitados: %d\n", statesVisited); // MENSAGEM ADICIONADA AQUI
 
             if(cur->depth>0){
                 Node* path[cur->depth];
                 Node* tmp = cur;
-                for(int i=cur->depth-1;i>=0;i--){ 
-                    path[i]=tmp; tmp=tmp->parent; 
+                for(int i=cur->depth-1;i>=0;i--){
+                    path[i]=tmp; tmp=tmp->parent;
                 }
 
                 printf("Movimentos realizados: ");
@@ -233,7 +236,7 @@ void searchSolver(char start[6][4], int maxDepth, int isDFS){
                 printf("\n");
             }
 
-            printf("\nCubo final:\n"); 
+            printf("\nCubo final:\n");
             printCubeVisualColored(cur->cube);
 
             while(!isEmpty(&q)) free(dequeue(&q));
@@ -246,9 +249,9 @@ void searchSolver(char start[6][4], int maxDepth, int isDFS){
                 Node* child = (Node*)malloc(sizeof(Node));
                 copyCube(child->cube,cur->cube);
                 funcs[i](child->cube);
-                child->parent=cur; 
-                child->move=moves[i]; 
-                child->depth=cur->depth+1; 
+                child->parent=cur;
+                child->move=moves[i];
+                child->depth=cur->depth+1;
                 child->next=NULL;
                 enqueue(&q,child);
             }
@@ -257,42 +260,48 @@ void searchSolver(char start[6][4], int maxDepth, int isDFS){
         if(cur->parent==NULL) free(cur);
     }
 
-    printf("Nenhuma solucao encontrada atÃ© profundidade %d\n", maxDepth);
+    printf("Nenhuma solução encontrada até profundidade %d\n", maxDepth);
+    printf("Estados visitados: %d\n", statesVisited); // MENSAGEM ADICIONADA AQUI
 }
 
 void playInteractive(char cube[6][4]){
     int playing=1,movs=0;
     do{
         system("cls"); printCubeVisualColored(cube);
-        printf("Comandos F, U, R, L, B, D\n");
+        printf("Comandos: F, U, R, L, B, D, ESC (para sair)\n");
         char c = getch();
         switch(c){
-            case 70: case 102: moveF(cube); break;
-            case 85: case 117: moveU(cube); break;
-            case 66: case 98: moveB(cube); break;
-            case 82: case 114: moveR(cube); break;
-            case 76: case 108: moveL(cube); break;
-            case 68: case 100: moveD(cube); break;
+            case 27: playing = 0; break;
+            case 70: case 102: moveF(cube); playing = !isCompletedCube(cube); break;
+            case 85: case 117: moveU(cube); playing = !isCompletedCube(cube); break;
+            case 66: case 98:  moveB(cube); playing = !isCompletedCube(cube); break;
+            case 82: case 114: moveR(cube); playing = !isCompletedCube(cube); break;
+            case 76: case 108: moveL(cube); playing = !isCompletedCube(cube); break;
+            case 68: case 100: moveD(cube); playing = !isCompletedCube(cube); break;
             default: movs--; break;
         }
-        movs++; playing = !isCompletedCube(cube);
+        movs++;
     }while(playing);
 
-    system("cls");
-    printf("Completo em %d movimentos\n", movs);
+    if (isCompletedCube(cube)) {
+            system("cls"); printCubeVisualColored(cube);
+            printf("\nCompleto em %d movimentos!\n", movs);
+    }
 }
 
+
 int main(){
+    setlocale(LC_ALL,"portuguese");
     srand(time(NULL));
     char cube[6][4];
     initCube(cube);
-    randCube(cube);
 
-    int selected=0, running=1, optionsCount=4;
+    int selected=0, running=1, optionsCount=5;
 
     while(running){
+        randCube(cube);
         system("cls");
-        printf("Escolha o modo de jogo\n\n");
+        printf("Escolha o modo de jogo:\n\n");
 
         for(int i=0;i<optionsCount;i++){
             if(i==selected) printf("\x1b[34m");
@@ -302,6 +311,7 @@ int main(){
                 case 1: printf("Busca em Largura\n"); break;
                 case 2: printf("Busca em Profundidade\n"); break;
                 case 3: printf("A*\n"); break;
+                case 4: printf("Fechar Programa\n"); break;
             }
         }
 
@@ -314,14 +324,16 @@ int main(){
             else if(c==80){ selected++; if(selected>=optionsCount) selected=0; }
         }
         else if(c==13){
-            running=0; system("cls");
+            system("cls");
             switch(selected){
-                case 0: printf("Voce escolheu Jogar!\n"); playInteractive(cube); break;
-                case 1: printf("Voce escolheu Busca em Largura!\n"); searchSolver(cube,15,0); break;
-                case 2: printf("Voce escolheu Busca em Profundidade!\n"); searchSolver(cube,16,1); break;
-                case 3: printf("Voce escolheu A*!\n"); break;
+                case 0: printf("Você escolheu Jogar!\n"); playInteractive(cube); system("pause"); break;
+                case 1: printf("Você escolheu Busca em Largura!\n"); searchSolver(cube,16,0); system("pause"); break;
+                case 2: printf("Você escolheu Busca em Profundidade!\n"); searchSolver(cube,16,1); system("pause"); break;
+                case 3: printf("Você escolheu A*!\n"); system("pause"); break;
+                case 4: printf("Você escolheu fechar o programa!\n"); running=0; break;
             }
         }
+
     }
 
     return 0;
